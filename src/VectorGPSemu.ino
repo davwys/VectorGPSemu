@@ -1,4 +1,4 @@
-#include "I2C.h"
+#include <I2C.h>
 #include <SoftwareSerial.h>
 #include <TinyGPS++.h>
 
@@ -16,32 +16,22 @@ uint8_t sendremain=0;
 uint32_t lastgps=0;
 bool     newGPS=0;
 
+// GPS Data
+uint32_t lat;
+uint32_t lon;
+uint32_t altitude;
+uint32_t speed;
+uint32_t satellites;
+uint32_t hdop;
+
 
 // TinyGPS setup
 static const int RXPin = 5, TXPin = 6;
 static const uint32_t GPSBaud = 9600;
-static const int MAX_SATELLITES = 40;
-static const int PAGE_LENGTH = 40;
-
-// The TinyGPS++ object
 TinyGPSPlus gps;
+SoftwareSerial GPSSerial(RXPin, TXPin);
 
-// The serial connection to the GPS device
-SoftwareSerial ss(RXPin, TXPin);
-
-TinyGPSCustom totalGPGSVMessages(gps, "GPGSV", 1); // $GPGSV sentence, first element
-TinyGPSCustom messageNumber(gps, "GPGSV", 2);      // $GPGSV sentence, second element
-TinyGPSCustom satNumber[4]; // to be initialized later
-TinyGPSCustom elevation[4];
-bool anyChanges = false;
-unsigned long linecount = 0;
-struct
-{
-  int elevation;
-  bool active;
-} sats[MAX_SATELLITES];
-
-
+// TODO Docstrings
 void stepTime(uint8_t buf[]) {
   buf[0]+= 0x10;
   if (buf[0] > 0x99) {
@@ -70,6 +60,7 @@ void stepTime(uint8_t buf[]) {
   }
 }
 
+// TODO docstrings
 uint8_t slaveHandler(uint8_t *data, uint8_t flags) {
   if (flags & MYI2C_SLAVE_ISTX) {
     switch (vectmode) {
@@ -137,31 +128,39 @@ uint8_t slaveHandler(uint8_t *data, uint8_t flags) {
 }
 
 void printGpsTest(){
-  // Dispatch incoming characters
- if (ss.available() > 0)
+ if (GPSSerial.available() > 0)
  {
-   gps.encode(ss.read());
-    Serial.print("LAT=");  Serial.println(gps.location.lat(), 6);
-    Serial.print("LONG="); Serial.println(gps.location.lng(), 6);
-    Serial.print("ALT=");  Serial.println(gps.altitude.meters());
+    gps.encode(GPSSerial.read());
+
+    // Get GPS data
+    lat = gps.location.lat();
+    lon = gps.location.lng();
+    altitude = gps.altitude.meters();
+    speed = gps.speed.kmph(); // TODO imperial?
+    satellites = gps.satellites.value();
+    hdop = gps.hdop.value();
+
+    Serial.print("LAT: ");
+    Serial.print(lat);
+    Serial.print(", LON: ");
+    Serial.print(lon);
+    Serial.print(", ALT: ");
+    Serial.println(altitude);
+    Serial.print("Speed: ");
+    Serial.print(speed);
+    Serial.print("kmh");
+    Serial.print("Sats: ");
+    Serial.print(satellites);
+    Serial.print(", HDOP: ");
+    Serial.println(hdop);
  }
  else{
    Serial.println("GPS not found!");
  }
 }
 
-void setup() {
-  myI2C_init(1);
-  myI2C_slaveSetup(0x58,0,0,slaveHandler);
-
-  ss.begin(GPSBaud);
-  Serial.begin(115200);
-  Serial.println("Starting GPS emulator");
-
-}
-
-void dumpbuf(uint8_t b[] ,uint8_t cnt)
-{
+// TODO docstrings
+void dumpbuf(uint8_t b[] ,uint8_t cnt){
   for (int i=0;i<cnt;i++) {
     Serial.print(b[i],16);
     if (i==(cnt-1))
@@ -175,6 +174,7 @@ char serbuf[20];
 uint8_t getbuf = 0;
 uint8_t serbuflen = 0;
 
+// TODO docstrings
 uint8_t to_nibble(uint8_t c) {
   uint8_t r = tolower(c);
   if (r>'9') {
@@ -184,56 +184,19 @@ uint8_t to_nibble(uint8_t c) {
   }
   return r;
 }
-void IntPrint(int n, int len)
-{
-  int digs = n < 0 ? 2 : 1;
-  for (int i=10; i<=abs(n); i*=10)
-    ++digs;
-  while (digs++ < len)
-    Serial.print(F(" "));
-  Serial.print(n);
-  Serial.print(F(" "));
+
+// Initial setup function
+void setup() {
+  /* TODO I2C setup on Arduino Nano I2C pins
+  myI2C_init(1);
+  myI2C_slaveSetup(0x58,0,0,slaveHandler);
+ */
+  GPSSerial.begin(GPSBaud);
+  Serial.begin(115200);
+  Serial.println("Starting Vector GPS emulator");
 }
 
-void TimePrint()
-{
-  if (gps.time.isValid())
-  {
-    if (gps.time.hour() < 10)
-      Serial.print(F("0"));
-    Serial.print(gps.time.hour());
-    Serial.print(F(":"));
-    if (gps.time.minute() < 10)
-      Serial.print(F("0"));
-    Serial.print(gps.time.minute());
-    Serial.print(F(":"));
-    if (gps.time.second() < 10)
-      Serial.print(F("0"));
-    Serial.print(gps.time.second());
-    Serial.print(F(" "));
-  }
-  else
-  {
-    Serial.print(F("(unknown)"));
-  }
-}
-
-void printHeader()
-{
-  Serial.println();
-  Serial.print(F("Time     "));
-  for (int i=0; i<MAX_SATELLITES; ++i)
-  {
-    Serial.print(F(" "));
-    IntPrint(i+1, 2);
-  }
-  Serial.println();
-  Serial.print(F("---------"));
-  for (int i=0; i<MAX_SATELLITES; ++i)
-    Serial.print(F("----"));
-  Serial.println();
-}
-
+// Main loop
 void loop() {
   printGpsTest();
   delay(500);
