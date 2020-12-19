@@ -1,4 +1,6 @@
 #include "I2C.h"
+#include <SoftwareSerial.h>
+#include <TinyGPS++.h>
 
 uint8_t vectmode=0;
 uint8_t vectdata;
@@ -13,6 +15,32 @@ uint8_t sendremain=0;
 
 uint32_t lastgps=0;
 bool     newGPS=0;
+
+
+// TinyGPS setup
+static const int RXPin = 5, TXPin = 6;
+static const uint32_t GPSBaud = 9600;
+static const int MAX_SATELLITES = 40;
+static const int PAGE_LENGTH = 40;
+
+// The TinyGPS++ object
+TinyGPSPlus gps;
+
+// The serial connection to the GPS device
+SoftwareSerial ss(RXPin, TXPin);
+
+TinyGPSCustom totalGPGSVMessages(gps, "GPGSV", 1); // $GPGSV sentence, first element
+TinyGPSCustom messageNumber(gps, "GPGSV", 2);      // $GPGSV sentence, second element
+TinyGPSCustom satNumber[4]; // to be initialized later
+TinyGPSCustom elevation[4];
+bool anyChanges = false;
+unsigned long linecount = 0;
+struct
+{
+  int elevation;
+  bool active;
+} sats[MAX_SATELLITES];
+
 
 void stepTime(uint8_t buf[]) {
   buf[0]+= 0x10;
@@ -78,11 +106,11 @@ uint8_t slaveHandler(uint8_t *data, uint8_t flags) {
         }
       default: // invalid
         *data=0;
-        return 0;  
+        return 0;
     }
   } else {
     if (flags & MYI2C_SLAVE_ISFIRST) {
-      if (*data == 0x41) { 
+      if (*data == 0x41) {
         vectmode=0x41;
         return 1;
       } else if (*databuf == 0x5A) {
@@ -108,11 +136,27 @@ uint8_t slaveHandler(uint8_t *data, uint8_t flags) {
   }
 }
 
+void printGpsTest(){
+  // Dispatch incoming characters
+ if (ss.available() > 0)
+ {
+   gps.encode(ss.read());
+    Serial.print("LAT=");  Serial.println(gps.location.lat(), 6);
+    Serial.print("LONG="); Serial.println(gps.location.lng(), 6);
+    Serial.print("ALT=");  Serial.println(gps.altitude.meters());
+ }
+ else{
+   Serial.println("GPS not found!");
+ }
+}
+
 void setup() {
   myI2C_init(1);
   myI2C_slaveSetup(0x58,0,0,slaveHandler);
+
+  ss.begin(GPSBaud);
   Serial.begin(115200);
-  Serial.println("Vector GPS emulator running");
+  Serial.println("Starting GPS emulator");
 
 }
 
@@ -140,8 +184,60 @@ uint8_t to_nibble(uint8_t c) {
   }
   return r;
 }
+void IntPrint(int n, int len)
+{
+  int digs = n < 0 ? 2 : 1;
+  for (int i=10; i<=abs(n); i*=10)
+    ++digs;
+  while (digs++ < len)
+    Serial.print(F(" "));
+  Serial.print(n);
+  Serial.print(F(" "));
+}
+
+void TimePrint()
+{
+  if (gps.time.isValid())
+  {
+    if (gps.time.hour() < 10)
+      Serial.print(F("0"));
+    Serial.print(gps.time.hour());
+    Serial.print(F(":"));
+    if (gps.time.minute() < 10)
+      Serial.print(F("0"));
+    Serial.print(gps.time.minute());
+    Serial.print(F(":"));
+    if (gps.time.second() < 10)
+      Serial.print(F("0"));
+    Serial.print(gps.time.second());
+    Serial.print(F(" "));
+  }
+  else
+  {
+    Serial.print(F("(unknown)"));
+  }
+}
+
+void printHeader()
+{
+  Serial.println();
+  Serial.print(F("Time     "));
+  for (int i=0; i<MAX_SATELLITES; ++i)
+  {
+    Serial.print(F(" "));
+    IntPrint(i+1, 2);
+  }
+  Serial.println();
+  Serial.print(F("---------"));
+  for (int i=0; i<MAX_SATELLITES; ++i)
+    Serial.print(F("----"));
+  Serial.println();
+}
 
 void loop() {
+  printGpsTest();
+  delay(500);
+  /*
   uint32_t now=millis();
   if ((now-lastgps)>100) {
     lastgps=now;
@@ -231,31 +327,31 @@ void loop() {
           databuf[21] = (0x10 * ((serbuf[3]-'0')&0x0f)) +
                         ((serbuf[4]-'0')&0x0f);
         } else if (ch=='1' && serbuflen==2) {
-          databuf[28]=(0x10 * (to_nibble(serbuf[0])&0x0f)) + 
+          databuf[28]=(0x10 * (to_nibble(serbuf[0])&0x0f)) +
                       (to_nibble(serbuf[1])&0x0f);
         } else if (ch=='2' && serbuflen==2) {
-          databuf[34]=(0x10 * (to_nibble(serbuf[0])&0x0f)) + 
+          databuf[34]=(0x10 * (to_nibble(serbuf[0])&0x0f)) +
                       (to_nibble(serbuf[1])&0x0f);
         } else if (ch=='3' && serbuflen==2) {
-          databuf[35]=(0x10 * (to_nibble(serbuf[0])&0x0f)) + 
+          databuf[35]=(0x10 * (to_nibble(serbuf[0])&0x0f)) +
                       (to_nibble(serbuf[1])&0x0f);
         } else if (ch=='4' && serbuflen==2) {
-          databuf[36]=(0x10 * (to_nibble(serbuf[0])&0x0f)) + 
+          databuf[36]=(0x10 * (to_nibble(serbuf[0])&0x0f)) +
                       (to_nibble(serbuf[1])&0x0f);
         } else if (ch=='x' && serbuflen==4) {
-          databuf[0]=(0x10 * (to_nibble(serbuf[0])&0x0f)) + 
+          databuf[0]=(0x10 * (to_nibble(serbuf[0])&0x0f)) +
                       (to_nibble(serbuf[1])&0x0f);
-          databuf[1]=(0x10 * (to_nibble(serbuf[2])&0x0f)) + 
+          databuf[1]=(0x10 * (to_nibble(serbuf[2])&0x0f)) +
                       (to_nibble(serbuf[3])&0x0f);
         } else if (ch=='y' && serbuflen==4) {
-          databuf[2]=(0x10 * (to_nibble(serbuf[0])&0x0f)) + 
+          databuf[2]=(0x10 * (to_nibble(serbuf[0])&0x0f)) +
                       (to_nibble(serbuf[1])&0x0f);
-          databuf[3]=(0x10 * (to_nibble(serbuf[2])&0x0f)) + 
+          databuf[3]=(0x10 * (to_nibble(serbuf[2])&0x0f)) +
                       (to_nibble(serbuf[3])&0x0f);
         } else if (ch=='z' && serbuflen==4) {
-          databuf[4]=(0x10 * (to_nibble(serbuf[0])&0x0f)) + 
+          databuf[4]=(0x10 * (to_nibble(serbuf[0])&0x0f)) +
                       (to_nibble(serbuf[1])&0x0f);
-          databuf[5]=(0x10 * (to_nibble(serbuf[2])&0x0f)) + 
+          databuf[5]=(0x10 * (to_nibble(serbuf[2])&0x0f)) +
                       (to_nibble(serbuf[3])&0x0f);
         }
         getbuf=0;
@@ -265,5 +361,5 @@ void loop() {
     while (Serial.available()) Serial.read();
     dumpbuf(databuf,37);
   }
+  */
 }
-
