@@ -1,6 +1,4 @@
-#include <I2C.h>
-#include <SoftwareSerial.h>
-#include <TinyGPS++.h>
+#include "I2C.h"
 
 uint8_t vectmode=0;
 uint8_t vectdata;
@@ -16,22 +14,6 @@ uint8_t sendremain=0;
 uint32_t lastgps=0;
 bool     newGPS=0;
 
-// GPS Data
-uint32_t lat;
-uint32_t lon;
-uint32_t altitude;
-uint32_t speed;
-uint32_t satellites;
-uint32_t hdop;
-
-
-// TinyGPS setup
-static const int RXPin = 5, TXPin = 6;
-static const uint32_t GPSBaud = 9600;
-TinyGPSPlus gps;
-SoftwareSerial GPSSerial(RXPin, TXPin);
-
-// TODO Docstrings
 void stepTime(uint8_t buf[]) {
   buf[0]+= 0x10;
   if (buf[0] > 0x99) {
@@ -60,7 +42,6 @@ void stepTime(uint8_t buf[]) {
   }
 }
 
-// TODO docstrings
 uint8_t slaveHandler(uint8_t *data, uint8_t flags) {
   if (flags & MYI2C_SLAVE_ISTX) {
     switch (vectmode) {
@@ -127,40 +108,16 @@ uint8_t slaveHandler(uint8_t *data, uint8_t flags) {
   }
 }
 
-void printGpsTest(){
- if (GPSSerial.available() > 0)
- {
-    gps.encode(GPSSerial.read());
+void setup() {
+  myI2C_init(1);
+  myI2C_slaveSetup(0x58,0,0,slaveHandler);
+  Serial.begin(115200);
+  Serial.println("Vector GPS emulator running");
 
-    // Get GPS data
-    lat = gps.location.lat();
-    lon = gps.location.lng();
-    altitude = gps.altitude.meters();
-    speed = gps.speed.kmph(); // TODO imperial?
-    satellites = gps.satellites.value();
-    hdop = gps.hdop.value();
-
-    Serial.print("LAT: ");
-    Serial.print(lat);
-    Serial.print(", LON: ");
-    Serial.print(lon);
-    Serial.print(", ALT: ");
-    Serial.println(altitude);
-    Serial.print("Speed: ");
-    Serial.print(speed);
-    Serial.print("kmh");
-    Serial.print("Sats: ");
-    Serial.print(satellites);
-    Serial.print(", HDOP: ");
-    Serial.println(hdop);
- }
- else{
-   Serial.println("GPS not found!");
- }
 }
 
-// TODO docstrings
-void dumpbuf(uint8_t b[] ,uint8_t cnt){
+void dumpbuf(uint8_t b[] ,uint8_t cnt)
+{
   for (int i=0;i<cnt;i++) {
     Serial.print(b[i],16);
     if (i==(cnt-1))
@@ -174,7 +131,6 @@ char serbuf[20];
 uint8_t getbuf = 0;
 uint8_t serbuflen = 0;
 
-// TODO docstrings
 uint8_t to_nibble(uint8_t c) {
   uint8_t r = tolower(c);
   if (r>'9') {
@@ -185,22 +141,7 @@ uint8_t to_nibble(uint8_t c) {
   return r;
 }
 
-// Initial setup function
-void setup() {
-  /* TODO I2C setup on Arduino Nano I2C pins
-  myI2C_init(1);
-  myI2C_slaveSetup(0x58,0,0,slaveHandler);
- */
-  GPSSerial.begin(GPSBaud);
-  Serial.begin(115200);
-  Serial.println("Starting Vector GPS emulator");
-}
-
-// Main loop
 void loop() {
-  printGpsTest();
-  delay(500);
-  /*
   uint32_t now=millis();
   if ((now-lastgps)>100) {
     lastgps=now;
@@ -307,7 +248,7 @@ void loop() {
           databuf[1]=(0x10 * (to_nibble(serbuf[2])&0x0f)) +
                       (to_nibble(serbuf[3])&0x0f);
         } else if (ch=='y' && serbuflen==4) {
-          databuf[2]=(0x10 * (to_nibble(serbuf[0])&0x0f)) +
+          databuf[2]=(0x10 * (to_nibble(serbuf[0])&0x0f)) + 
                       (to_nibble(serbuf[1])&0x0f);
           databuf[3]=(0x10 * (to_nibble(serbuf[2])&0x0f)) +
                       (to_nibble(serbuf[3])&0x0f);
@@ -324,5 +265,4 @@ void loop() {
     while (Serial.available()) Serial.read();
     dumpbuf(databuf,37);
   }
-  */
 }
